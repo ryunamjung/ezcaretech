@@ -24,7 +24,7 @@ if uploaded_file:
             df['대상'].apply(is_blank_or_dash)
         )]
 
-        df_filtered = df_filtered[~df_filtered['홀드사유'].astype(str).str.contains('Y', na=False)]
+        df_filtered = df_filtered[~df_filtered['배포홀드'].astype(str).str.contains('Y', na=False)]
 
         전체병원_공지문 = []
 
