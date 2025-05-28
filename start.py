@@ -3,7 +3,7 @@ import pandas as pd
 from io import BytesIO
 from docx import Document
 
-st.title("공지문 대상별 Word 생성기")
+st.title("공지문 대상별 Word 생성기:업로드 파일 전체병원 한칸은 꼭 모두병원한개한개찍어주세요")
 
 uploaded_file = st.file_uploader("엑셀 파일을 업로드하세요", type=["xlsx"])
 
