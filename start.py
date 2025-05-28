@@ -17,6 +17,7 @@ if uploaded_file:
         def is_blank_or_dash(val):
             return pd.isna(val) or str(val).strip() in ['', '-']
 
+        # 유효 데이터만 필터링
         df_filtered = df[~(
             df['배포홀드'].apply(is_blank_or_dash) &
             df['홀드사유'].apply(is_blank_or_dash) &
@@ -24,54 +25,59 @@ if uploaded_file:
             df['대상'].apply(is_blank_or_dash)
         )]
 
-        df_filtered = df_filtered[~df_filtered['배포홀드'].astype(str).str.contains('Y', na=False)]
+        # 'Y' 포함된 행 제거
+        df_filtered = df_filtered[
+            ~df_filtered['배포홀드'].astype(str).str.contains('Y', na=False) &
+            ~df_filtered['홀드사유'].astype(str).str.contains('Y', na=False)
+        ]
 
         전체병원_공지문 = []
-
         rows = []
+
         for _, row in df_filtered.iterrows():
             대상_raw = row['대상']
-            # NaN이면 빈 문자열로 치환
+            공지 = str(row['공지문']).strip()
+
             if pd.isna(대상_raw):
                 대상_raw = ''
 
-            # 쉼표로 분리 후, 각 항목 strip + 보이지 않는 공백 제거
-            targets = [t.strip().replace('\xa0', '') for t in str(대상_raw).split(',')]
-            # 빈 문자열 제거
-            targets = [t for t in targets if t]
+            targets = [t.strip().replace('\xa0', '') for t in str(대상_raw).split(',') if t.strip()]
 
-            # '전체병원' 포함 여부 체크 (소문자 변환해서 비교할 수도 있음)
-            if any(t == '전체병원' for t in targets):
-                전체병원_공지문.append(str(row['공지문']))
-                # '전체병원' 공지문은 개별 대상에 넣지 않음
-                # 만약 '전체병원'외 다른 대상도 있으면 개별 대상에도 넣고 싶으면 아래로 분리 처리 필요
-                other_targets = [t for t in targets if t != '전체병원']
-                for target in other_targets:
-                    rows.append({'대상': target, '공지문': str(row['공지문'])})
-            else:
-                for target in targets:
-                    rows.append({'대상': target, '공지문': str(row['공지문'])})
+            if '전체병원' in targets:
+                전체병원_공지문.append(공지)
+                targets = [t for t in targets if t != '전체병원']
 
+            for target in targets:
+                rows.append({'대상': target, '공지문': 공지})
+
+        # DataFrame 생성 및 전체병원 공지 병합
         grouped_df = pd.DataFrame(rows)
+        모든_대상 = grouped_df['대상'].unique().tolist()
 
         if grouped_df.empty and not 전체병원_공지문:
             st.warning("유효한 데이터가 없습니다.")
         else:
             if not grouped_df.empty:
                 grouped = grouped_df.groupby('대상')['공지문'].apply(list).reset_index()
-                # 전체병원 공지문을 모든 대상 공지문 리스트 뒤에 추가
+                # 전체병원 공지문 추가
                 grouped['공지문'] = grouped['공지문'].apply(lambda lst: lst + 전체병원_공지문)
             else:
                 grouped = pd.DataFrame({'대상': ['전체병원'], '공지문': [전체병원_공지문]})
 
+            # 공지문 리스트를 문자열로 변환해서 동일한 공지문끼리 그룹화
+            grouped['공지문_str'] = grouped['공지문'].apply(lambda lst: '||'.join(lst))  # 구분자 사용
+            merged = grouped.groupby('공지문_str')['대상'].apply(list).reset_index()
+            merged['공지문'] = merged['공지문_str'].apply(lambda s: s.split('||'))
+
             st.success("Word 파일 생성 완료! 아래에서 다운로드하세요:")
 
-            for _, row in grouped.iterrows():
-                대상 = row['대상']
+            for _, row in merged.iterrows():
+                대상들 = sorted(row['대상'])
                 공지문_list = row['공지문']
 
+                대상_str = ', '.join(대상들)
                 doc = Document()
-                doc.add_heading(f"{대상} 공지문", level=1)
+                doc.add_heading(f"{대상_str} 공지문", level=1)
 
                 for idx, notice in enumerate(공지문_list, start=1):
                     doc.add_paragraph(f"{idx}. {notice}")
@@ -81,8 +87,9 @@ if uploaded_file:
                 buffer.seek(0)
 
                 st.download_button(
-                    label=f"{대상}.docx 다운로드",
+                    label=f"{대상_str}.docx 다운로드",
                     data=buffer,
-                    file_name=f"{대상}.docx",
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    file_name=f"{대상_str}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    key=f"download_{hash(대상_str)}"
                 )
